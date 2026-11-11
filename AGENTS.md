@@ -2,7 +2,7 @@
 # AtlasForge — Agent Instructions
 
 ## Project
-AtlasForge is a browser-based fictional map editor.
+AtlasForge is a browser-based fictionagl map editor.
 
 ## Stack
 - Next.js App Router

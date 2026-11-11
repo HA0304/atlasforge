@@ -1,0 +1,16 @@
+
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "openrouter/baidu/ernie-5.5-flash-preview:free",
+  "small_model": "openrouter/cohere/north-mini-code:free",
+  "provider": {
+    "openrouter": {
+      "whitelist": [
+        "baidu/ernie-5.5-flash-preview:free",
+        "cohere/north-mini-code:free",
+        "recursive/flint-v1.0:free",
+        "google/gemma-4-26b-a4b-it:free"
+      ]
+    }
+  }
+}
