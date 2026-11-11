@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 import {
   fitViewport,
   resizeViewport,
+  translateViewport,
   type Size,
+  type Vec2,
   type Viewport,
 } from "@/lib/geometry/transforms";
 import type {
@@ -59,8 +66,10 @@ export function MapViewport({ map }: MapViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<Size>(INITIAL_SIZE);
   const hasMeasuredRef = useRef(false);
+  const dragRef = useRef<{ pointerId: number; last: Vec2 } | null>(null);
   const [size, setSize] = useState<Size>(INITIAL_SIZE);
   const [viewport, setViewport] = useState<Viewport>(INITIAL_VIEWPORT);
+  const [isPanning, setIsPanning] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -103,9 +112,71 @@ export function MapViewport({ map }: MapViewportProps) {
     };
   }, [map.width, map.height]);
 
+  function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || dragRef.current !== null) {
+      return;
+    }
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      last: { x: event.clientX, y: event.clientY },
+    };
+    setIsPanning(true);
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const delta: Vec2 = {
+      x: event.clientX - drag.last.x,
+      y: event.clientY - drag.last.y,
+    };
+
+    dragRef.current = {
+      pointerId: drag.pointerId,
+      last: { x: event.clientX, y: event.clientY },
+    };
+    setViewport((current) => translateViewport(current, delta));
+  }
+
+  function stopPanning(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    dragRef.current = null;
+    setIsPanning(false);
+  }
+
+  function handleLostPointerCapture() {
+    dragRef.current = null;
+    setIsPanning(false);
+  }
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#0f172a]">
-      <div ref={containerRef} className="absolute inset-0">
+      <div
+        ref={containerRef}
+        className={`absolute inset-0 touch-none select-none ${
+          isPanning ? "cursor-grabbing" : "cursor-grab"
+        }`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={stopPanning}
+        onPointerCancel={stopPanning}
+        onLostPointerCapture={handleLostPointerCapture}
+      >
         <svg
           width={size.width}
           height={size.height}
