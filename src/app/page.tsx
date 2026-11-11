@@ -1,4 +1,4 @@
-import { MapViewport } from "@/components/MapViewport";
+import { MapEditor } from "@/components/MapEditor";
 import { sampleMap } from "@/lib/map/sampleMap";
 
 export default function Home() {
@@ -17,7 +17,7 @@ export default function Home() {
       </header>
 
       <section className="relative min-h-0 flex-1 overflow-hidden">
-        <MapViewport map={sampleMap} />
+        <MapEditor initialMap={sampleMap} />
       </section>
     </main>
   );

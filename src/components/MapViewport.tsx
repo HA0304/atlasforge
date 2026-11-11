@@ -10,6 +10,7 @@ import {
 import {
   fitViewport,
   resizeViewport,
+  screenToWorld,
   type Size,
   type Vec2,
   type Viewport,
@@ -32,6 +33,11 @@ const VIEWPORT_PADDING = 48;
 
 interface MapViewportProps {
   map: MapDocument;
+  mode?: "pan" | "draw";
+  selectedFeatureId?: string;
+  drawingPoints?: Vec2[];
+  onSelectFeature?: (featureId: string | null) => void;
+  onCanvasClick?: (point: Vec2) => void;
 }
 
 function polygonPoints(polygon: PolygonFeature): string {
@@ -67,7 +73,14 @@ function MapFeatureShape({ feature }: { feature: PolygonFeature | LabelFeature }
   );
 }
 
-export function MapViewport({ map }: MapViewportProps) {
+export function MapViewport({
+  map,
+  mode = "pan",
+  selectedFeatureId,
+  drawingPoints = [],
+  onSelectFeature,
+  onCanvasClick,
+}: MapViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<Size>(INITIAL_SIZE);
   const hasMeasuredRef = useRef(false);
@@ -160,6 +173,10 @@ export function MapViewport({ map }: MapViewportProps) {
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (mode === "draw") {
+      return;
+    }
+
     if (event.button !== 0 || dragRef.current !== null) {
       return;
     }
@@ -211,6 +228,23 @@ export function MapViewport({ map }: MapViewportProps) {
     setIsPanning(false);
   }
 
+  function handleCanvasClick(event: React.MouseEvent<HTMLDivElement>) {
+    if (mode !== "draw" || !onCanvasClick) {
+      return;
+    }
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    onCanvasClick(
+      screenToWorld(
+        {
+          x: event.clientX - bounds.left,
+          y: event.clientY - bounds.top,
+        },
+        viewport,
+      ),
+    );
+  }
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#0f172a]">
       <div
@@ -223,6 +257,7 @@ export function MapViewport({ map }: MapViewportProps) {
         onPointerUp={stopPanning}
         onPointerCancel={stopPanning}
         onLostPointerCapture={handleLostPointerCapture}
+        onClick={handleCanvasClick}
       >
         <svg
           width={size.width}
@@ -273,8 +308,55 @@ export function MapViewport({ map }: MapViewportProps) {
             />
 
             {map.features.map((feature) => (
-              <MapFeatureShape key={feature.id} feature={feature} />
+              <g
+                key={feature.id}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectFeature?.(feature.id);
+                }}
+                className={
+                  selectedFeatureId === feature.id ? "opacity-100" : undefined
+                }
+              >
+                <MapFeatureShape feature={feature} />
+                {selectedFeatureId === feature.id &&
+                feature.kind === "polygon" ? (
+                  <polygon
+                    points={polygonPoints(feature)}
+                    fill="none"
+                    stroke="#38bdf8"
+                    strokeWidth={3}
+                    strokeDasharray="8 6"
+                    vectorEffect="non-scaling-stroke"
+                    pointerEvents="none"
+                  />
+                ) : null}
+              </g>
             ))}
+            {drawingPoints.length > 0 ? (
+              <>
+                <polyline
+                  points={drawingPoints
+                    .map((point) => `${point.x},${point.y}`)
+                    .join(" ")}
+                  fill="none"
+                  stroke="#38bdf8"
+                  strokeWidth={3}
+                  strokeDasharray="8 6"
+                  vectorEffect="non-scaling-stroke"
+                />
+                {drawingPoints.map((point, index) => (
+                  <circle
+                    key={`${point.x}-${point.y}-${index}`}
+                    cx={point.x}
+                    cy={point.y}
+                    r={5}
+                    fill="#38bdf8"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </>
+            ) : null}
           </g>
         </svg>
       </div>
