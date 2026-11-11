@@ -10,13 +10,16 @@ import {
 import {
   fitViewport,
   resizeViewport,
-  translateViewport,
-  wheelZoomFactor,
-  zoomAtPoint,
   type Size,
   type Vec2,
   type Viewport,
 } from "@/lib/geometry/transforms";
+import {
+  panViewport,
+  resetViewport,
+  zoomViewportAtCenter,
+  zoomViewportAtPointer,
+} from "@/lib/geometry/viewport";
 import type {
   LabelFeature,
   MapDocument,
@@ -129,9 +132,10 @@ export function MapViewport({ map }: MapViewportProps) {
         x: event.clientX - bounds.left,
         y: event.clientY - bounds.top,
       };
-      const factor = wheelZoomFactor(event.deltaY);
 
-      setViewport((current) => zoomAtPoint(current, pointer, factor));
+      setViewport((current) =>
+        zoomViewportAtPointer(current, pointer, event.deltaY),
+      );
     };
 
     container.addEventListener("wheel", handleWheel, { passive: false });
@@ -142,19 +146,13 @@ export function MapViewport({ map }: MapViewportProps) {
   }, []);
 
   function zoomAtCenter(factor: number) {
-    setViewport((current) =>
-      zoomAtPoint(
-        current,
-        { x: size.width / 2, y: size.height / 2 },
-        factor,
-      ),
-    );
+    setViewport((current) => zoomViewportAtCenter(current, size, factor));
   }
 
   function resetView() {
     setViewport(
-      fitViewport(
-        { x: 0, y: 0, width: map.width, height: map.height },
+      resetViewport(
+        { width: map.width, height: map.height },
         size,
         VIEWPORT_PADDING,
       ),
@@ -190,7 +188,7 @@ export function MapViewport({ map }: MapViewportProps) {
       pointerId: drag.pointerId,
       last: { x: event.clientX, y: event.clientY },
     };
-    setViewport((current) => translateViewport(current, delta));
+    setViewport((current) => panViewport(current, delta));
   }
 
   function stopPanning(event: ReactPointerEvent<HTMLDivElement>) {
