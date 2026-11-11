@@ -11,6 +11,8 @@ import {
   fitViewport,
   resizeViewport,
   translateViewport,
+  wheelZoomFactor,
+  zoomAtPoint,
   type Size,
   type Vec2,
   type Viewport,
@@ -111,6 +113,53 @@ export function MapViewport({ map }: MapViewportProps) {
       observer.disconnect();
     };
   }, [map.width, map.height]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+
+      const bounds = container.getBoundingClientRect();
+      const pointer = {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      };
+      const factor = wheelZoomFactor(event.deltaY);
+
+      setViewport((current) => zoomAtPoint(current, pointer, factor));
+    };
+
+    container.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      container.removeEventListener("wheel", handleWheel);
+    };
+  }, []);
+
+  function zoomAtCenter(factor: number) {
+    setViewport((current) =>
+      zoomAtPoint(
+        current,
+        { x: size.width / 2, y: size.height / 2 },
+        factor,
+      ),
+    );
+  }
+
+  function resetView() {
+    setViewport(
+      fitViewport(
+        { x: 0, y: 0, width: map.width, height: map.height },
+        size,
+        VIEWPORT_PADDING,
+      ),
+    );
+  }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || dragRef.current !== null) {
@@ -230,6 +279,39 @@ export function MapViewport({ map }: MapViewportProps) {
             ))}
           </g>
         </svg>
+      </div>
+
+      <div className="absolute bottom-4 right-4 flex items-center gap-1 rounded-lg border border-white/10 bg-zinc-900/90 p-1.5 shadow-xl backdrop-blur">
+        <button
+          type="button"
+          onClick={() => zoomAtCenter(1 / 1.25)}
+          aria-label="Zoom out"
+          className="flex h-8 w-8 items-center justify-center rounded text-lg font-semibold text-zinc-200 transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+        >
+          −
+        </button>
+        <span
+          className="min-w-14 text-center text-xs font-medium tabular-nums text-zinc-300"
+          aria-live="polite"
+        >
+          {Math.round(viewport.scale * 100)}%
+        </span>
+        <button
+          type="button"
+          onClick={() => zoomAtCenter(1.25)}
+          aria-label="Zoom in"
+          className="flex h-8 w-8 items-center justify-center rounded text-lg font-semibold text-zinc-200 transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+        >
+          +
+        </button>
+        <span className="mx-1 h-5 w-px bg-white/10" />
+        <button
+          type="button"
+          onClick={resetView}
+          className="rounded px-2 py-1 text-xs font-medium text-zinc-300 transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+        >
+          Fit
+        </button>
       </div>
 
       {map.features.length === 0 ? (
