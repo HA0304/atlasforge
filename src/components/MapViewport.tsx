@@ -36,6 +36,8 @@ export interface MapViewportProps {
   onSelectFeature?: (featureId: string | null) => void;
   onCanvasClick?: (point: Vec2) => void;
   onMoveFeature?: (featureId: string, delta: Vec2) => void;
+  onFeatureDragStart?: (featureId: string) => void;
+  onFeatureDragEnd?: () => void;
 }
 
 export function MapViewport({
@@ -46,6 +48,8 @@ export function MapViewport({
   onSelectFeature,
   onCanvasClick,
   onMoveFeature,
+  onFeatureDragStart,
+  onFeatureDragEnd,
 }: MapViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<Size>(INITIAL_SIZE);
@@ -207,6 +211,7 @@ export function MapViewport({
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
       featureDragRef.current = null;
+      onFeatureDragEnd?.();
       return;
     }
 
@@ -225,12 +230,16 @@ export function MapViewport({
   }
 
   function handleLostPointerCapture() {
+    if (featureDragRef.current) {
+      onFeatureDragEnd?.();
+    }
     dragRef.current = null;
+    featureDragRef.current = null;
     setIsPanning(false);
   }
 
   function handleCanvasClick(event: React.MouseEvent<HTMLDivElement>) {
-    if ((mode !== "draw" && mode !== "text") || !onCanvasClick) {
+    if (mode === "pan" || !onCanvasClick) {
       return;
     }
 
@@ -250,19 +259,20 @@ export function MapViewport({
     event: ReactPointerEvent<SVGGElement>,
     featureId: string,
   ) {
-    event.stopPropagation();
     onSelectFeature?.(featureId);
 
     if (mode !== "select" || event.button !== 0) {
       return;
     }
 
+    event.stopPropagation();
     containerRef.current?.setPointerCapture(event.pointerId);
     featureDragRef.current = {
       pointerId: event.pointerId,
       featureId,
       last: { x: event.clientX, y: event.clientY },
     };
+    onFeatureDragStart?.(featureId);
   }
 
   return (
