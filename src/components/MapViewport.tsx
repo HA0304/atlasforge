@@ -276,7 +276,7 @@ export function MapViewport({
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[#0f172a]">
+    <div className="relative h-full w-full overflow-hidden bg-[#8DB7B2]">
       <div
         ref={containerRef}
         className={`absolute inset-0 touch-none select-none ${
@@ -307,14 +307,15 @@ export function MapViewport({
               <path
                 d="M 100 0 L 0 0 0 100"
                 fill="none"
-                stroke="#c8d9df"
+                stroke="#657F61"
+                strokeOpacity={0.14}
                 strokeWidth={1}
                 vectorEffect="non-scaling-stroke"
               />
             </pattern>
           </defs>
 
-          <rect width="100%" height="100%" fill="#0f172a" />
+          <rect width="100%" height="100%" fill="#8DB7B2" />
 
           <g
             transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}
@@ -324,8 +325,8 @@ export function MapViewport({
               y={0}
               width={map.width}
               height={map.height}
-              fill="#a9d6e5"
-              stroke="#6d8b96"
+              fill="#D8C49A"
+              stroke="#657F61"
               strokeWidth={2}
               vectorEffect="non-scaling-stroke"
             />
@@ -353,7 +354,7 @@ export function MapViewport({
                     .map((point) => `${point.x},${point.y}`)
                     .join(" ")}
                   fill="none"
-                  stroke="#38bdf8"
+                  stroke="#657F61"
                   strokeWidth={3}
                   strokeDasharray="8 6"
                   vectorEffect="non-scaling-stroke"
@@ -364,7 +365,7 @@ export function MapViewport({
                     cx={point.x}
                     cy={point.y}
                     r={5}
-                    fill="#38bdf8"
+                    fill="#657F61"
                     vectorEffect="non-scaling-stroke"
                   />
                 ))}
@@ -374,17 +375,17 @@ export function MapViewport({
         </svg>
       </div>
 
-      <div className="absolute bottom-4 right-4 flex items-center gap-1 rounded-lg border border-white/10 bg-zinc-900/90 p-1.5 shadow-xl backdrop-blur">
+      <div className="absolute bottom-4 right-4 flex items-center gap-1 rounded-full border border-[#353F39]/10 bg-white/95 p-1.5 text-[#353F39] shadow-[0_8px_24px_rgba(53,63,57,0.16)]">
         <button
           type="button"
           onClick={() => zoomAtCenter(1 / 1.25)}
           aria-label="Zoom out"
-          className="flex h-8 w-8 items-center justify-center rounded text-lg font-semibold text-zinc-200 transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-lg font-semibold transition hover:bg-[#F7F5EF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#657F61]"
         >
           −
         </button>
         <span
-          className="min-w-14 text-center text-xs font-medium tabular-nums text-zinc-300"
+          className="min-w-14 text-center text-xs font-medium tabular-nums"
           aria-live="polite"
         >
           {Math.round(viewport.scale * 100)}%
@@ -393,15 +394,15 @@ export function MapViewport({
           type="button"
           onClick={() => zoomAtCenter(1.25)}
           aria-label="Zoom in"
-          className="flex h-8 w-8 items-center justify-center rounded text-lg font-semibold text-zinc-200 transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-lg font-semibold transition hover:bg-[#F7F5EF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#657F61]"
         >
           +
         </button>
-        <span className="mx-1 h-5 w-px bg-white/10" />
+        <span className="mx-1 h-5 w-px bg-[#353F39]/10" />
         <button
           type="button"
           onClick={resetView}
-          className="rounded px-2 py-1 text-xs font-medium text-zinc-300 transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+          className="rounded-full px-2 py-1 text-xs font-medium transition hover:bg-[#F7F5EF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#657F61]"
         >
           Fit
         </button>
