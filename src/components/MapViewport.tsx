@@ -21,56 +21,21 @@ import {
   zoomViewportAtCenter,
   zoomViewportAtPointer,
 } from "@/lib/geometry/viewport";
-import type {
-  LabelFeature,
-  MapDocument,
-  PolygonFeature,
-} from "@/lib/map/types";
+import { MapFeature } from "@/components/MapFeature";
+import type { MapDocument } from "@/lib/map/types";
 
 const INITIAL_SIZE: Size = { width: 0, height: 0 };
 const INITIAL_VIEWPORT: Viewport = { x: 0, y: 0, scale: 1 };
 const VIEWPORT_PADDING = 48;
 
-interface MapViewportProps {
+export interface MapViewportProps {
   map: MapDocument;
-  mode?: "pan" | "draw";
+  mode?: "select" | "pan" | "draw" | "text";
   selectedFeatureId?: string;
   drawingPoints?: Vec2[];
   onSelectFeature?: (featureId: string | null) => void;
   onCanvasClick?: (point: Vec2) => void;
-}
-
-function polygonPoints(polygon: PolygonFeature): string {
-  return polygon.points.map((point) => `${point.x},${point.y}`).join(" ");
-}
-
-function MapFeatureShape({ feature }: { feature: PolygonFeature | LabelFeature }) {
-  if (feature.kind === "polygon") {
-    return (
-      <polygon
-        points={polygonPoints(feature)}
-        fill={feature.fill}
-        stroke={feature.stroke}
-        strokeWidth={2}
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-      />
-    );
-  }
-
-  return (
-    <text
-      x={feature.position.x}
-      y={feature.position.y}
-      fill={feature.color}
-      fontSize={feature.fontSize}
-      textAnchor="middle"
-      dominantBaseline="middle"
-      style={{ userSelect: "none" }}
-    >
-      {feature.text}
-    </text>
-  );
+  onMoveFeature?: (featureId: string, delta: Vec2) => void;
 }
 
 export function MapViewport({
@@ -80,11 +45,17 @@ export function MapViewport({
   drawingPoints = [],
   onSelectFeature,
   onCanvasClick,
+  onMoveFeature,
 }: MapViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<Size>(INITIAL_SIZE);
   const hasMeasuredRef = useRef(false);
   const dragRef = useRef<{ pointerId: number; last: Vec2 } | null>(null);
+  const featureDragRef = useRef<{
+    pointerId: number;
+    featureId: string;
+    last: Vec2;
+  } | null>(null);
   const [size, setSize] = useState<Size>(INITIAL_SIZE);
   const [viewport, setViewport] = useState<Viewport>(INITIAL_VIEWPORT);
   const [isPanning, setIsPanning] = useState(false);
@@ -173,7 +144,7 @@ export function MapViewport({
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (mode === "draw") {
+    if (mode !== "pan") {
       return;
     }
 
@@ -190,6 +161,21 @@ export function MapViewport({
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const featureDrag = featureDragRef.current;
+
+    if (featureDrag?.pointerId === event.pointerId) {
+      const delta: Vec2 = {
+        x: (event.clientX - featureDrag.last.x) / viewport.scale,
+        y: (event.clientY - featureDrag.last.y) / viewport.scale,
+      };
+      featureDragRef.current = {
+        ...featureDrag,
+        last: { x: event.clientX, y: event.clientY },
+      };
+      onMoveFeature?.(featureDrag.featureId, delta);
+      return;
+    }
+
     const drag = dragRef.current;
 
     if (!drag || drag.pointerId !== event.pointerId) {
@@ -209,6 +195,16 @@ export function MapViewport({
   }
 
   function stopPanning(event: ReactPointerEvent<HTMLDivElement>) {
+    const featureDrag = featureDragRef.current;
+
+    if (featureDrag?.pointerId === event.pointerId) {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      featureDragRef.current = null;
+      return;
+    }
+
     const drag = dragRef.current;
 
     if (!drag || drag.pointerId !== event.pointerId) {
@@ -229,7 +225,7 @@ export function MapViewport({
   }
 
   function handleCanvasClick(event: React.MouseEvent<HTMLDivElement>) {
-    if (mode !== "draw" || !onCanvasClick) {
+    if ((mode !== "draw" && mode !== "text") || !onCanvasClick) {
       return;
     }
 
@@ -243,6 +239,25 @@ export function MapViewport({
         viewport,
       ),
     );
+  }
+
+  function handleFeaturePointerDown(
+    event: ReactPointerEvent<SVGGElement>,
+    featureId: string,
+  ) {
+    event.stopPropagation();
+    onSelectFeature?.(featureId);
+
+    if (mode !== "select" || event.button !== 0) {
+      return;
+    }
+
+    containerRef.current?.setPointerCapture(event.pointerId);
+    featureDragRef.current = {
+      pointerId: event.pointerId,
+      featureId,
+      last: { x: event.clientX, y: event.clientY },
+    };
   }
 
   return (
@@ -308,30 +323,13 @@ export function MapViewport({
             />
 
             {map.features.map((feature) => (
-              <g
+              <MapFeature
                 key={feature.id}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onSelectFeature?.(feature.id);
-                }}
-                className={
-                  selectedFeatureId === feature.id ? "opacity-100" : undefined
-                }
-              >
-                <MapFeatureShape feature={feature} />
-                {selectedFeatureId === feature.id &&
-                feature.kind === "polygon" ? (
-                  <polygon
-                    points={polygonPoints(feature)}
-                    fill="none"
-                    stroke="#38bdf8"
-                    strokeWidth={3}
-                    strokeDasharray="8 6"
-                    vectorEffect="non-scaling-stroke"
-                    pointerEvents="none"
-                  />
-                ) : null}
-              </g>
+                feature={feature}
+                selected={selectedFeatureId === feature.id}
+                onSelect={(featureId) => onSelectFeature?.(featureId)}
+                onPointerDown={handleFeaturePointerDown}
+              />
             ))}
             {drawingPoints.length > 0 ? (
               <>
