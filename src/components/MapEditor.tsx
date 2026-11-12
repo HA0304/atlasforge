@@ -72,6 +72,7 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [isContextOpen, setIsContextOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const contextPanelRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HistoryState>({ past: [], future: [] });
   const featureDragStartRef = useRef<MapDocument | null>(null);
 
@@ -127,6 +128,21 @@ export function MapEditor({ initialMap }: MapEditorProps) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   });
+
+  useEffect(() => {
+    function dismissContextPanel(event: PointerEvent) {
+      if (
+        isContextOpen &&
+        contextPanelRef.current &&
+        !contextPanelRef.current.contains(event.target as Node)
+      ) {
+        setIsContextOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", dismissContextPanel);
+    return () => document.removeEventListener("pointerdown", dismissContextPanel);
+  }, [isContextOpen]);
 
   function commitMap(nextMap: MapDocument, status?: string) {
     setMap((current) => {
@@ -483,15 +499,17 @@ export function MapEditor({ initialMap }: MapEditorProps) {
       ) : null}
 
       {selectedFeature && isContextOpen ? (
-        <ContextPanel
-          feature={selectedFeature}
-          onClose={() => {
-            setIsContextOpen(false);
-            setSelectedFeatureId(null);
-          }}
-          onDelete={deleteSelected}
-          onUpdate={updateSelected}
-        />
+        <div ref={contextPanelRef}>
+          <ContextPanel
+            feature={selectedFeature}
+            onClose={() => {
+              setIsContextOpen(false);
+              setSelectedFeatureId(null);
+            }}
+            onDelete={deleteSelected}
+            onUpdate={updateSelected}
+          />
+        </div>
       ) : null}
       {message ? (
         <div className="absolute bottom-5 right-4 z-10 rounded-full bg-white px-3 py-2 text-xs font-medium shadow-lg" role="status">
