@@ -118,7 +118,12 @@ export function MapViewport({
       };
 
       setViewport((current) =>
-        zoomViewportAtPointer(current, pointer, event.deltaY),
+        zoomViewportAtPointer(
+          current,
+          pointer,
+          event.deltaY,
+          event.deltaMode,
+        ),
       );
     };
 
