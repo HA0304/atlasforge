@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { moveFeature, moveFeatureInDocument } from "./features";
+import { parseMapDocument, serializeMapDocument } from "./serialization";
 
 describe("feature movement", () => {
   it("moves every polygon point without changing its shape", () => {
@@ -70,5 +71,33 @@ describe("feature movement", () => {
     expect(moveFeatureInDocument(features, "label-2", { x: 3, y: 4 })[1]).toMatchObject({
       position: { x: 203, y: 184 },
     });
+  });
+
+  it("preserves moved objects through JSON save and load", () => {
+      const document = {
+        version: 1 as const,
+        name: "Moved map",
+        width: 500,
+        height: 400,
+        features: [
+          {
+            kind: "label" as const,
+            id: "label-1",
+            text: "Harbor",
+            position: { x: 100, y: 120 },
+            fontSize: 20,
+            color: "#222",
+          },
+        ],
+      };
+      const moved = {
+        ...document,
+        features: moveFeatureInDocument(document.features, "label-1", {
+          x: 40,
+          y: -15,
+        }),
+      };
+
+      expect(parseMapDocument(serializeMapDocument(moved))).toEqual(moved);
   });
 });
