@@ -7,6 +7,11 @@ export interface MapFeatureProps {
   selected: boolean;
   onSelect: (featureId: string) => void;
   onPointerDown: (event: PointerEvent<SVGGElement>, featureId: string) => void;
+  onVertexPointerDown: (
+    event: PointerEvent<SVGCircleElement>,
+    featureId: string,
+    vertexIndex: number,
+  ) => void;
 }
 
 function polygonPoints(polygon: PolygonFeature): string {
@@ -47,6 +52,7 @@ export function MapFeature({
   selected,
   onSelect,
   onPointerDown,
+  onVertexPointerDown,
 }: MapFeatureProps) {
   function handleClick(event: MouseEvent<SVGGElement>) {
     event.stopPropagation();
@@ -61,15 +67,32 @@ export function MapFeature({
     >
       <FeatureShape feature={feature} />
       {selected && feature.kind === "polygon" ? (
-        <polygon
-          points={polygonPoints(feature)}
-          fill="none"
-          stroke="#657f61"
-          strokeWidth={3}
-          strokeDasharray="8 6"
-          vectorEffect="non-scaling-stroke"
-          pointerEvents="none"
-        />
+        <>
+          <polygon
+            points={polygonPoints(feature)}
+            fill="none"
+            stroke="#657f61"
+            strokeWidth={3}
+            strokeDasharray="8 6"
+            vectorEffect="non-scaling-stroke"
+            pointerEvents="none"
+          />
+          {feature.points.map((point, index) => (
+            <circle
+              key={`${feature.id}-vertex-${index}`}
+              cx={point.x}
+              cy={point.y}
+              r={7}
+              fill="#ffffff"
+              stroke="#657f61"
+              strokeWidth={2}
+              vectorEffect="non-scaling-stroke"
+              onPointerDown={(event) =>
+                onVertexPointerDown(event, feature.id, index)
+              }
+            />
+          ))}
+        </>
       ) : null}
       {selected && feature.kind === "label" ? (
         <rect
