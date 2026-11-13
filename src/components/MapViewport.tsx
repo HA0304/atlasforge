@@ -315,6 +315,10 @@ export function MapViewport({
       return;
     }
 
+    if (mode === "select" && event.target !== event.currentTarget) {
+      return;
+    }
+
     if (mode === "draw" && event.detail === 2) {
       onFinishDrawing?.();
       return;

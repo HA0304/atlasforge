@@ -37,25 +37,6 @@ function createId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
-function readStoredMap(initialMap: MapDocument): MapDocument {
-  if (typeof window === "undefined") {
-    return initialMap;
-  }
-
-  const saved = window.localStorage.getItem(STORAGE_KEY);
-
-  if (!saved) {
-    return initialMap;
-  }
-
-  try {
-    return parseMapDocument(saved);
-  } catch {
-    window.localStorage.removeItem(STORAGE_KEY);
-    return initialMap;
-  }
-}
-
 function featureById(
   map: MapDocument,
   featureId: string | null,
@@ -64,7 +45,7 @@ function featureById(
 }
 
 export function MapEditor({ initialMap }: MapEditorProps) {
-  const [map, setMap] = useState<MapDocument>(() => readStoredMap(initialMap));
+  const [map, setMap] = useState<MapDocument>(initialMap);
   const [tool, setTool] = useState<EditorTool>("select");
   const [drawingPoints, setDrawingPoints] = useState<Point[]>([]);
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(
@@ -79,8 +60,32 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   const historyRef = useRef<HistoryState<MapDocument> | null>(null);
   const featureDragStartRef = useRef<MapDocument | null>(null);
   const vertexDragStartRef = useRef<MapDocument | null>(null);
+  const restoredStorageRef = useRef(false);
 
   useEffect(() => {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    if (!saved) {
+      restoredStorageRef.current = true;
+      return;
+    }
+
+    try {
+      const restored = parseMapDocument(saved);
+      window.requestAnimationFrame(() => {
+        setMap(restored);
+        setMapNameDraft(restored.name);
+        restoredStorageRef.current = true;
+      });
+    } catch {
+      window.localStorage.removeItem(STORAGE_KEY);
+      restoredStorageRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!restoredStorageRef.current) {
+      return;
+    }
     window.localStorage.setItem(STORAGE_KEY, serializeMapDocument(map));
   }, [map]);
 
