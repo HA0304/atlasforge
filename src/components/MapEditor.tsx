@@ -10,6 +10,13 @@ import {
 } from "@/lib/map/serialization";
 import { moveFeatureInDocument } from "@/lib/map/features";
 import { isValidPolygon, updatePolygonVertex } from "@/lib/geometry/polygons";
+import {
+  createHistory,
+  pushHistory,
+  redoHistory,
+  undoHistory,
+  type HistoryState,
+} from "@/lib/editor/history";
 import type {
   LabelFeature,
   MapDocument,
@@ -24,11 +31,6 @@ type EditorTool = "select" | "pan" | "draw" | "text";
 
 interface MapEditorProps {
   initialMap: MapDocument;
-}
-
-interface HistoryState {
-  past: MapDocument[];
-  future: MapDocument[];
 }
 
 function createId(prefix: string): string {
@@ -74,7 +76,7 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   const [isContextOpen, setIsContextOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const contextPanelRef = useRef<HTMLDivElement>(null);
-  const historyRef = useRef<HistoryState>({ past: [], future: [] });
+  const historyRef = useRef<HistoryState<MapDocument> | null>(null);
   const featureDragStartRef = useRef<MapDocument | null>(null);
   const vertexDragStartRef = useRef<MapDocument | null>(null);
 
@@ -153,8 +155,10 @@ export function MapEditor({ initialMap }: MapEditorProps) {
 
   function commitMap(nextMap: MapDocument, status?: string) {
     setMap((current) => {
-      historyRef.current.past = [...historyRef.current.past, current].slice(-50);
-      historyRef.current.future = [];
+      historyRef.current = pushHistory(
+        historyRef.current ?? createHistory(current),
+        nextMap,
+      );
       return nextMap;
     });
     if (status) {
@@ -168,8 +172,10 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   ) {
     setMap((current) => {
       const next = updater(current);
-      historyRef.current.past = [...historyRef.current.past, current].slice(-50);
-      historyRef.current.future = [];
+      historyRef.current = pushHistory(
+        historyRef.current ?? createHistory(current),
+        next,
+      );
       return next;
     });
     if (status) {
@@ -178,30 +184,34 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   }
 
   function undo() {
-    const previous = historyRef.current.past.pop();
-    if (!previous) {
+    const history = historyRef.current;
+    if (!history) {
       return;
     }
 
-    setMap((current) => {
-      historyRef.current.future.push(current);
-      return previous;
-    });
-    setMapNameDraft(previous.name);
+    const next = undoHistory(history);
+    if (next === history) {
+      return;
+    }
+    historyRef.current = next;
+    setMap(next.present);
+    setMapNameDraft(next.present.name);
     setMessage("Undid last change.");
   }
 
   function redo() {
-    const next = historyRef.current.future.pop();
-    if (!next) {
+    const history = historyRef.current;
+    if (!history) {
       return;
     }
 
-    setMap((current) => {
-      historyRef.current.past.push(current);
-      return next;
-    });
-    setMapNameDraft(next.name);
+    const next = redoHistory(history);
+    if (next === history) {
+      return;
+    }
+    historyRef.current = next;
+    setMap(next.present);
+    setMapNameDraft(next.present.name);
     setMessage("Redid last change.");
   }
 
@@ -340,8 +350,10 @@ export function MapEditor({ initialMap }: MapEditorProps) {
       if (serializeMapDocument(start) === serializeMapDocument(current)) {
         return current;
       }
-      historyRef.current.past = [...historyRef.current.past, start].slice(-50);
-      historyRef.current.future = [];
+      historyRef.current = pushHistory(
+        historyRef.current ?? createHistory(start),
+        current,
+      );
       return current;
     });
     setMessage("Object moved.");
@@ -379,8 +391,10 @@ export function MapEditor({ initialMap }: MapEditorProps) {
       if (serializeMapDocument(start) === serializeMapDocument(current)) {
         return current;
       }
-      historyRef.current.past = [...historyRef.current.past, start].slice(-50);
-      historyRef.current.future = [];
+      historyRef.current = pushHistory(
+        historyRef.current ?? createHistory(start),
+        current,
+      );
       return current;
     });
     setMessage("Vertex moved.");
@@ -445,8 +459,8 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   }
 
   const selectedFeature = featureById(map, selectedFeatureId);
-  const canUndo = historyRef.current.past.length > 0;
-  const canRedo = historyRef.current.future.length > 0;
+  const canUndo = Boolean(historyRef.current?.past.length);
+  const canRedo = Boolean(historyRef.current?.future.length);
 
   return (
     <div className="relative h-full overflow-hidden bg-[#F7F5EF] text-[#353F39]">
