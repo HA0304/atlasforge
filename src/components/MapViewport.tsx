@@ -81,6 +81,7 @@ export function MapViewport({
       }
     | null
   >(null);
+  const featureClickRef = useRef(false);
   const [size, setSize] = useState<Size>(INITIAL_SIZE);
   const [viewport, setViewport] = useState<Viewport>(INITIAL_VIEWPORT);
   const [isPanning, setIsPanning] = useState(false);
@@ -315,6 +316,10 @@ export function MapViewport({
       return;
     }
 
+    if (mode === "select" && featureClickRef.current) {
+      featureClickRef.current = false;
+      return;
+    }
     if (mode === "select" && event.target !== event.currentTarget) {
       return;
     }
@@ -351,12 +356,14 @@ export function MapViewport({
     featureId: string,
   ) {
     onSelectFeature?.(featureId);
+    featureClickRef.current = true;
 
     if (mode !== "select" || event.button !== 0) {
       return;
     }
 
     event.stopPropagation();
+    featureClickRef.current = true;
     containerRef.current?.setPointerCapture(event.pointerId);
     interactionRef.current = {
       kind: "feature",
@@ -373,6 +380,7 @@ export function MapViewport({
     vertexIndex: number,
   ) {
     event.stopPropagation();
+    featureClickRef.current = true;
     if (mode !== "select" || event.button !== 0) {
       return;
     }
