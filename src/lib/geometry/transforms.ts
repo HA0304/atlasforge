@@ -84,11 +84,14 @@ export function zoomAtPoint(
   };
 }
 
-export function wheelZoomFactor(deltaY: number): number {
+export function wheelZoomFactor(deltaY: number, deltaMode = 0): number {
   if (!Number.isFinite(deltaY)) {
     return 1;
   }
-  return Math.exp(-deltaY * 0.0015);
+
+  const deltaInPixels =
+    deltaMode === 1 ? deltaY * 16 : deltaMode === 2 ? deltaY * 800 : deltaY;
+  return Math.exp(-deltaInPixels * 0.0015);
 }
 
 export function fitViewport(

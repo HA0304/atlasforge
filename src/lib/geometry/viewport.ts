@@ -21,8 +21,9 @@ export function zoomViewportAtPointer(
   viewport: Viewport,
   pointer: Vec2,
   deltaY: number,
+  deltaMode = 0,
 ): Viewport {
-  return zoomAtPoint(viewport, pointer, wheelZoomFactor(deltaY));
+  return zoomAtPoint(viewport, pointer, wheelZoomFactor(deltaY, deltaMode));
 }
 
 export function zoomViewportAtCenter(

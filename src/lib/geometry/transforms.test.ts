@@ -109,6 +109,11 @@ describe("wheelZoomFactor", () => {
   it("ignores non-finite deltas", () => {
     expect(wheelZoomFactor(Number.NaN)).toBe(1);
   });
+
+  it("normalizes line and page wheel deltas", () => {
+    expect(wheelZoomFactor(1, 1)).toBeCloseTo(wheelZoomFactor(16, 0));
+    expect(wheelZoomFactor(1, 2)).toBeCloseTo(wheelZoomFactor(800, 0));
+  });
 });
 
 describe("fitViewport", () => {
