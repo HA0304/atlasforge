@@ -469,6 +469,7 @@ export function MapViewport({
                 }}
                 onPointerDown={handleFeaturePointerDown}
                 onVertexPointerDown={handleVertexPointerDown}
+                viewportScale={viewport.scale}
               />
             ))}
             {drawingPoints.length > 0 ? (

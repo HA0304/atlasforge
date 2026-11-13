@@ -12,6 +12,7 @@ export interface MapFeatureProps {
     featureId: string,
     vertexIndex: number,
   ) => void;
+  viewportScale: number;
 }
 
 function polygonPoints(polygon: PolygonFeature): string {
@@ -53,6 +54,7 @@ export function MapFeature({
   onSelect,
   onPointerDown,
   onVertexPointerDown,
+  viewportScale,
 }: MapFeatureProps) {
   function handleClick(event: MouseEvent<SVGGElement>) {
     event.stopPropagation();
@@ -87,6 +89,7 @@ export function MapFeature({
               stroke="#657f61"
               strokeWidth={2}
               vectorEffect="non-scaling-stroke"
+              transform={`translate(${point.x} ${point.y}) scale(${1 / viewportScale}) translate(${-point.x} ${-point.y})`}
               onPointerDown={(event) =>
                 onVertexPointerDown(event, feature.id, index)
               }
