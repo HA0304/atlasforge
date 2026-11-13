@@ -9,6 +9,7 @@ import {
   serializeMapDocument,
 } from "@/lib/map/serialization";
 import { moveFeatureInDocument } from "@/lib/map/features";
+import { isValidPolygon, updatePolygonVertex } from "@/lib/geometry/polygons";
 import type {
   LabelFeature,
   MapDocument,
@@ -75,6 +76,7 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   const contextPanelRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HistoryState>({ past: [], future: [] });
   const featureDragStartRef = useRef<MapDocument | null>(null);
+  const vertexDragStartRef = useRef<MapDocument | null>(null);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, serializeMapDocument(map));
@@ -110,8 +112,13 @@ export function MapEditor({ initialMap }: MapEditorProps) {
       }
 
       if (event.key === "Escape") {
+        cancelActiveDrag();
         setTool("select");
         setDrawingPoints([]);
+      } else if (tool === "draw" && event.key === "Enter") {
+        finishDrawing();
+      } else if (tool === "draw" && event.key === "Backspace") {
+        setDrawingPoints((points) => points.slice(0, -1));
       } else if (event.key.toLowerCase() === "v") {
         setTool("select");
       } else if (event.key.toLowerCase() === "h") {
@@ -146,7 +153,7 @@ export function MapEditor({ initialMap }: MapEditorProps) {
 
   function commitMap(nextMap: MapDocument, status?: string) {
     setMap((current) => {
-      historyRef.current.past.push(current);
+      historyRef.current.past = [...historyRef.current.past, current].slice(-50);
       historyRef.current.future = [];
       return nextMap;
     });
@@ -161,7 +168,7 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   ) {
     setMap((current) => {
       const next = updater(current);
-      historyRef.current.past.push(current);
+      historyRef.current.past = [...historyRef.current.past, current].slice(-50);
       historyRef.current.future = [];
       return next;
     });
@@ -207,8 +214,8 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   }
 
   function finishDrawing() {
-    if (drawingPoints.length < 3) {
-      setMessage("A polygon needs at least three points.");
+    if (!isValidPolygon(drawingPoints)) {
+      setMessage("Polygon needs three distinct points and a valid shape.");
       return;
     }
 
@@ -333,11 +340,61 @@ export function MapEditor({ initialMap }: MapEditorProps) {
       if (serializeMapDocument(start) === serializeMapDocument(current)) {
         return current;
       }
-      historyRef.current.past.push(start);
+      historyRef.current.past = [...historyRef.current.past, start].slice(-50);
       historyRef.current.future = [];
       return current;
     });
     setMessage("Object moved.");
+  }
+
+  function handleVertexDragStart() {
+    vertexDragStartRef.current = map;
+  }
+
+  function handleVertexMove(
+    featureId: string,
+    vertexIndex: number,
+    point: Point,
+  ) {
+    setMap((current) => ({
+      ...current,
+      features: current.features.map((feature) => {
+        if (feature.id !== featureId || feature.kind !== "polygon") {
+          return feature;
+        }
+        const points = updatePolygonVertex(feature.points, vertexIndex, point);
+        return points ? { ...feature, points } : feature;
+      }),
+    }));
+  }
+
+  function handleVertexDragEnd() {
+    const start = vertexDragStartRef.current;
+    vertexDragStartRef.current = null;
+    if (!start) {
+      return;
+    }
+
+    setMap((current) => {
+      if (serializeMapDocument(start) === serializeMapDocument(current)) {
+        return current;
+      }
+      historyRef.current.past = [...historyRef.current.past, start].slice(-50);
+      historyRef.current.future = [];
+      return current;
+    });
+    setMessage("Vertex moved.");
+  }
+
+  function cancelActiveDrag() {
+    const start = vertexDragStartRef.current ?? featureDragStartRef.current;
+    if (!start) {
+      return;
+    }
+    setMap(start);
+    vertexDragStartRef.current = null;
+    featureDragStartRef.current = null;
+    setMessage("Edit cancelled.");
   }
 
   function saveMap() {
@@ -470,11 +527,16 @@ export function MapEditor({ initialMap }: MapEditorProps) {
         onMoveFeature={handleFeatureMove}
         onFeatureDragStart={handleFeatureDragStart}
         onFeatureDragEnd={handleFeatureDragEnd}
+        onMoveVertex={handleVertexMove}
+        onVertexDragStart={handleVertexDragStart}
+        onVertexDragEnd={handleVertexDragEnd}
+        onFinishDrawing={finishDrawing}
+        onCancelInteraction={cancelActiveDrag}
       />
 
       {tool === "draw" ? (
         <div className="absolute bottom-5 left-1/2 z-10 -translate-x-1/2 rounded-full bg-white px-4 py-2 text-xs font-medium shadow-lg">
-          {drawingPoints.length} points ·{" "}
+          Click to add points · Enter/double-click to finish · Esc to cancel ·{" "}
           <button type="button" className="font-bold text-[#657F61]" onClick={finishDrawing}>
             Finish polygon
           </button>

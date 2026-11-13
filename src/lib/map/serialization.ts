@@ -6,6 +6,7 @@ import {
   type Point,
   type PolygonFeature,
 } from "./types";
+import { isValidPolygon } from "../geometry/polygons";
 
 export class MapDocumentError extends Error {
   readonly path: string;
@@ -71,13 +72,22 @@ function validatePolygon(value: unknown, path: string): PolygonFeature {
     );
   }
 
+  const parsedPoints = points.map((point, index) =>
+    validatePoint(point, `${path}.points[${index}]`),
+  );
+
+  if (!isValidPolygon(parsedPoints)) {
+    throw new MapDocumentError(
+      "expected a non-degenerate polygon without self-intersections",
+      `${path}.points`,
+    );
+  }
+
   return {
     kind: "polygon",
     id: requireString(polygon, "id", path),
     name: requireString(polygon, "name", path),
-    points: points.map((point, index) =>
-      validatePoint(point, `${path}.points[${index}]`),
-    ),
+    points: parsedPoints,
     fill: requireString(polygon, "fill", path),
     stroke: requireString(polygon, "stroke", path),
   };
