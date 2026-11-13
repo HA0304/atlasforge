@@ -20,9 +20,10 @@ npm run build
 
 ## Editor controls
 
-- **Select / V**: select and drag polygons or labels.
+- **Select / V**: select and drag polygons or labels; drag polygon vertex handles to reshape.
 - **Pan / H**: pan the canvas.
-- **Polygon / P**: click points, then finish the polygon.
+- **Polygon / P**: click points, click the first point, press Enter, or double-click to finish.
+  Escape cancels and Backspace removes the last unfinished point.
 - **Text / T**: enter label text, then click the map.
 - **Undo / Redo**: use the toolbar or `Ctrl/Cmd+Z` and `Ctrl/Cmd+Y`.
 - **Mouse wheel or trackpad**: zoom around the cursor.
@@ -43,3 +44,7 @@ versioned JSON map document.
 Geometry remains in fixed world coordinates. Pointer movement is converted from
 screen pixels to world units by dividing by the current viewport scale, so
 objects keep their shape and move consistently at every zoom level.
+
+Polygon edits reject duplicate vertices, zero-area polygons, and
+self-intersections. A completed polygon move or vertex drag creates one undo
+history entry; cancelled drags do not.
