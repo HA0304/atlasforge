@@ -144,6 +144,30 @@ describe("validateMapDocument", () => {
     ).toThrow(/finite number/);
   });
 
+  it("rejects points outside map bounds", () => {
+    expect(() =>
+      validateMapDocument({
+        ...createSampleDocument(),
+        width: 300,
+        height: 300,
+        features: [
+          {
+            kind: "polygon",
+            id: "outside",
+            name: "Outside",
+            points: [
+              { x: 0, y: 0 },
+              { x: 301, y: 0 },
+              { x: 150, y: 100 },
+            ],
+            fill: "#fff",
+            stroke: "#000",
+          },
+        ],
+      }),
+    ).toThrow(/within map bounds/);
+  });
+
   it("rejects duplicate feature ids", () => {
     const document = createSampleDocument();
     const duplicate = { ...document.features[0], id: "label-1" };

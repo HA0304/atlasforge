@@ -38,6 +38,7 @@ export interface MapViewportProps {
   onMoveFeature?: (featureId: string, delta: Vec2) => void;
   onFeatureDragStart?: (featureId: string) => void;
   onFeatureDragEnd?: () => void;
+  onFeatureDragCancel?: () => void;
   onMoveVertex?: (
     featureId: string,
     vertexIndex: number,
@@ -45,6 +46,7 @@ export interface MapViewportProps {
   ) => void;
   onVertexDragStart?: (featureId: string, vertexIndex: number) => void;
   onVertexDragEnd?: () => void;
+  onVertexDragCancel?: () => void;
   onDrawingPreview?: (point: Vec2 | null) => void;
   onFinishDrawing?: () => void;
   onCancelInteraction?: () => void;
@@ -60,9 +62,11 @@ export function MapViewport({
   onMoveFeature,
   onFeatureDragStart,
   onFeatureDragEnd,
+  onFeatureDragCancel,
   onMoveVertex,
   onVertexDragStart,
   onVertexDragEnd,
+  onVertexDragCancel,
   onDrawingPreview,
   onFinishDrawing,
   onCancelInteraction,
@@ -280,6 +284,7 @@ export function MapViewport({
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
+
       interactionRef.current = null;
       if (interaction.kind === "feature") {
         onFeatureDragEnd?.();
@@ -300,12 +305,32 @@ export function MapViewport({
     setIsPanning(false);
   }
 
-  function handleLostPointerCapture() {
-    if (interactionRef.current?.kind === "feature") {
-      onFeatureDragEnd?.();
+  function cancelInteraction(event: ReactPointerEvent<HTMLDivElement>) {
+    const interaction = interactionRef.current;
+    if (!interaction || interaction.pointerId !== event.pointerId) {
+      return;
     }
-    if (interactionRef.current?.kind === "vertex") {
-      onVertexDragEnd?.();
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    interactionRef.current = null;
+    setIsPanning(false);
+
+    if (interaction.kind === "feature") {
+      onFeatureDragCancel?.();
+    } else if (interaction.kind === "vertex") {
+      onVertexDragCancel?.();
+    }
+  }
+
+  function handleLostPointerCapture() {
+    const interaction = interactionRef.current;
+    if (interaction?.kind === "feature") {
+      onFeatureDragCancel?.();
+    } else if (interaction?.kind === "vertex") {
+      onVertexDragCancel?.();
     }
     interactionRef.current = null;
     setIsPanning(false);
@@ -404,7 +429,7 @@ export function MapViewport({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={stopPanning}
-        onPointerCancel={stopPanning}
+        onPointerCancel={cancelInteraction}
         onLostPointerCapture={handleLostPointerCapture}
         onClick={handleCanvasClick}
       >

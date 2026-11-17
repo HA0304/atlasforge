@@ -74,6 +74,7 @@ export function MapEditor({ initialMap }: MapEditorProps) {
       window.requestAnimationFrame(() => {
         setMap(restored);
         setMapNameDraft(restored.name);
+        historyRef.current = createHistory(restored);
         restoredStorageRef.current = true;
       });
     } catch {
@@ -86,7 +87,13 @@ export function MapEditor({ initialMap }: MapEditorProps) {
     if (!restoredStorageRef.current) {
       return;
     }
-    window.localStorage.setItem(STORAGE_KEY, serializeMapDocument(map));
+    try {
+      window.localStorage.setItem(STORAGE_KEY, serializeMapDocument(map));
+    } catch {
+      queueMicrotask(() =>
+        setMessage("Autosave failed. Export JSON to preserve your map."),
+      );
+    }
   }, [map]);
 
   useEffect(() => {
@@ -417,8 +424,12 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   }
 
   function saveMap() {
-    window.localStorage.setItem(STORAGE_KEY, serializeMapDocument(map));
-    setMessage("Map saved locally.");
+    try {
+      window.localStorage.setItem(STORAGE_KEY, serializeMapDocument(map));
+      setMessage("Map saved locally.");
+    } catch {
+      setMessage("Save failed. Export JSON to preserve your map.");
+    }
   }
 
   function exportMap() {
@@ -441,7 +452,9 @@ export function MapEditor({ initialMap }: MapEditorProps) {
 
     try {
       const imported = parseMapDocument(await file.text());
-      commitMap(imported, "Map imported.");
+      setMap(imported);
+      historyRef.current = createHistory(imported);
+      setMessage("Map imported.");
       setMapNameDraft(imported.name);
       setSelectedFeatureId(null);
       setIsContextOpen(false);
@@ -546,9 +559,11 @@ export function MapEditor({ initialMap }: MapEditorProps) {
         onMoveFeature={handleFeatureMove}
         onFeatureDragStart={handleFeatureDragStart}
         onFeatureDragEnd={handleFeatureDragEnd}
+        onFeatureDragCancel={cancelActiveDrag}
         onMoveVertex={handleVertexMove}
         onVertexDragStart={handleVertexDragStart}
         onVertexDragEnd={handleVertexDragEnd}
+        onVertexDragCancel={cancelActiveDrag}
         onFinishDrawing={finishDrawing}
         onCancelInteraction={cancelActiveDrag}
       />
