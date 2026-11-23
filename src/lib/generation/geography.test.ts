@@ -153,6 +153,9 @@ describe("deterministic geography", () => {
     const started = performance.now();
     const generated = generateGeography(spec, 1200, 800);
     const elapsed = performance.now() - started;
+    console.log(
+      `representative geography generation: ${elapsed.toFixed(3)} ms`,
+    );
 
     expect(generated.ringCount).toBeGreaterThan(0);
     expect(generated.svg.startsWith("<svg")).toBe(true);
