@@ -22,6 +22,8 @@ import {
   saveMapToStorage,
   type KeyValueStorage,
 } from "@/lib/persistence/mapStorage";
+import { generateGeography } from "@/lib/generation/generateMap";
+import { VALID_PROMPT_TO_MAP_EXAMPLES } from "@/lib/ai/mapSpec";
 import type {
   LabelFeature,
   MapDocument,
@@ -452,6 +454,14 @@ export function MapEditor({ initialMap }: MapEditorProps) {
     }
   }
 
+  function generateMap() {
+    const spec = VALID_PROMPT_TO_MAP_EXAMPLES[
+      (map.features.length + map.name.length) % VALID_PROMPT_TO_MAP_EXAMPLES.length
+    ];
+    const generated = generateGeography(spec, map.width, map.height);
+    commitMap(generated.map, `Generated ${generated.ringCount} landmasses.`);
+  }
+
   function exportMap() {
     const blob = new Blob([serializeMapDocument(map)], {
       type: "application/json",
@@ -549,6 +559,9 @@ export function MapEditor({ initialMap }: MapEditorProps) {
             label="Import JSON"
           >
             ⇧
+          </ToolbarButton>
+          <ToolbarButton onClick={generateMap} label="Generate seeded map">
+            G
           </ToolbarButton>
           <input
             ref={importInputRef}
