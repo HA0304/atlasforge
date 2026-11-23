@@ -17,6 +17,11 @@ import {
   undoHistory,
   type HistoryState,
 } from "@/lib/editor/history";
+import {
+  loadMapFromStorage,
+  saveMapToStorage,
+  type KeyValueStorage,
+} from "@/lib/persistence/mapStorage";
 import type {
   LabelFeature,
   MapDocument,
@@ -24,8 +29,6 @@ import type {
   Point,
   PolygonFeature,
 } from "@/lib/map/types";
-
-const STORAGE_KEY = "atlasforge-map-document";
 
 type EditorTool = "select" | "pan" | "draw" | "text";
 
@@ -63,22 +66,40 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   const restoredStorageRef = useRef(false);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (!saved) {
+    const storage: KeyValueStorage = window.localStorage;
+    const result = loadMapFromStorage(storage);
+
+    if (result.status === "empty") {
       restoredStorageRef.current = true;
       return;
     }
 
-    try {
-      const restored = parseMapDocument(saved);
+    if (result.status === "restored") {
       window.requestAnimationFrame(() => {
-        setMap(restored);
-        setMapNameDraft(restored.name);
-        historyRef.current = createHistory(restored);
+        setMap(result.map);
+        setMapNameDraft(result.map.name);
+        historyRef.current = createHistory(result.map);
         restoredStorageRef.current = true;
       });
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+
+    if (result.status === "discarded") {
+      queueMicrotask(() =>
+        setMessage(
+          result.reason === "unsupported"
+            ? "Saved map version is unsupported. A new map was opened."
+            : "Saved map data was malformed. A new map was opened.",
+        ),
+      );
+      restoredStorageRef.current = true;
+      return;
+    }
+
+    if (result.status === "unavailable") {
+      queueMicrotask(() =>
+        setMessage("Saved map storage is unavailable. Export JSON to preserve changes."),
+      );
       restoredStorageRef.current = true;
     }
   }, []);
@@ -87,9 +108,8 @@ export function MapEditor({ initialMap }: MapEditorProps) {
     if (!restoredStorageRef.current) {
       return;
     }
-    try {
-      window.localStorage.setItem(STORAGE_KEY, serializeMapDocument(map));
-    } catch {
+    const result = saveMapToStorage(window.localStorage, map);
+    if (result.status === "unavailable") {
       queueMicrotask(() =>
         setMessage("Autosave failed. Export JSON to preserve your map."),
       );
@@ -424,10 +444,10 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   }
 
   function saveMap() {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, serializeMapDocument(map));
+    const result = saveMapToStorage(window.localStorage, map);
+    if (result.status === "saved") {
       setMessage("Map saved locally.");
-    } catch {
+    } else {
       setMessage("Save failed. Export JSON to preserve your map.");
     }
   }
