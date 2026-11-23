@@ -9,6 +9,21 @@ import {
   serializeMapDocument,
 } from "@/lib/map/serialization";
 import { moveFeatureInDocument } from "@/lib/map/features";
+import { isValidPolygon, updatePolygonVertex } from "@/lib/geometry/polygons";
+import {
+  createHistory,
+  pushHistory,
+  redoHistory,
+  undoHistory,
+  type HistoryState,
+} from "@/lib/editor/history";
+import {
+  loadMapFromStorage,
+  saveMapToStorage,
+  type KeyValueStorage,
+} from "@/lib/persistence/mapStorage";
+import { generateGeography } from "@/lib/generation/generateMap";
+import { VALID_PROMPT_TO_MAP_EXAMPLES } from "@/lib/ai/mapSpec";
 import type {
   LabelFeature,
   MapDocument,
@@ -17,40 +32,14 @@ import type {
   PolygonFeature,
 } from "@/lib/map/types";
 
-const STORAGE_KEY = "atlasforge-map-document";
-
 type EditorTool = "select" | "pan" | "draw" | "text";
 
 interface MapEditorProps {
   initialMap: MapDocument;
 }
 
-interface HistoryState {
-  past: MapDocument[];
-  future: MapDocument[];
-}
-
 function createId(prefix: string): string {
   return `${prefix}-${crypto.randomUUID()}`;
-}
-
-function readStoredMap(initialMap: MapDocument): MapDocument {
-  if (typeof window === "undefined") {
-    return initialMap;
-  }
-
-  const saved = window.localStorage.getItem(STORAGE_KEY);
-
-  if (!saved) {
-    return initialMap;
-  }
-
-  try {
-    return parseMapDocument(saved);
-  } catch {
-    window.localStorage.removeItem(STORAGE_KEY);
-    return initialMap;
-  }
 }
 
 function featureById(
@@ -61,7 +50,7 @@ function featureById(
 }
 
 export function MapEditor({ initialMap }: MapEditorProps) {
-  const [map, setMap] = useState<MapDocument>(() => readStoredMap(initialMap));
+  const [map, setMap] = useState<MapDocument>(initialMap);
   const [tool, setTool] = useState<EditorTool>("select");
   const [drawingPoints, setDrawingPoints] = useState<Point[]>([]);
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(
@@ -73,11 +62,60 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   const [isContextOpen, setIsContextOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const contextPanelRef = useRef<HTMLDivElement>(null);
-  const historyRef = useRef<HistoryState>({ past: [], future: [] });
+  const historyRef = useRef<HistoryState<MapDocument> | null>(null);
   const featureDragStartRef = useRef<MapDocument | null>(null);
+  const vertexDragStartRef = useRef<MapDocument | null>(null);
+  const restoredStorageRef = useRef(false);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, serializeMapDocument(map));
+    const storage: KeyValueStorage = window.localStorage;
+    const result = loadMapFromStorage(storage);
+
+    if (result.status === "empty") {
+      restoredStorageRef.current = true;
+      return;
+    }
+
+    if (result.status === "restored") {
+      window.requestAnimationFrame(() => {
+        setMap(result.map);
+        setMapNameDraft(result.map.name);
+        historyRef.current = createHistory(result.map);
+        restoredStorageRef.current = true;
+      });
+      return;
+    }
+
+    if (result.status === "discarded") {
+      queueMicrotask(() =>
+        setMessage(
+          result.reason === "unsupported"
+            ? "Saved map version is unsupported. A new map was opened."
+            : "Saved map data was malformed. A new map was opened.",
+        ),
+      );
+      restoredStorageRef.current = true;
+      return;
+    }
+
+    if (result.status === "unavailable") {
+      queueMicrotask(() =>
+        setMessage("Saved map storage is unavailable. Export JSON to preserve changes."),
+      );
+      restoredStorageRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!restoredStorageRef.current) {
+      return;
+    }
+    const result = saveMapToStorage(window.localStorage, map);
+    if (result.status === "unavailable") {
+      queueMicrotask(() =>
+        setMessage("Autosave failed. Export JSON to preserve your map."),
+      );
+    }
   }, [map]);
 
   useEffect(() => {
@@ -110,8 +148,13 @@ export function MapEditor({ initialMap }: MapEditorProps) {
       }
 
       if (event.key === "Escape") {
+        cancelActiveDrag();
         setTool("select");
         setDrawingPoints([]);
+      } else if (tool === "draw" && event.key === "Enter") {
+        finishDrawing();
+      } else if (tool === "draw" && event.key === "Backspace") {
+        setDrawingPoints((points) => points.slice(0, -1));
       } else if (event.key.toLowerCase() === "v") {
         setTool("select");
       } else if (event.key.toLowerCase() === "h") {
@@ -146,8 +189,10 @@ export function MapEditor({ initialMap }: MapEditorProps) {
 
   function commitMap(nextMap: MapDocument, status?: string) {
     setMap((current) => {
-      historyRef.current.past.push(current);
-      historyRef.current.future = [];
+      historyRef.current = pushHistory(
+        historyRef.current ?? createHistory(current),
+        nextMap,
+      );
       return nextMap;
     });
     if (status) {
@@ -161,8 +206,10 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   ) {
     setMap((current) => {
       const next = updater(current);
-      historyRef.current.past.push(current);
-      historyRef.current.future = [];
+      historyRef.current = pushHistory(
+        historyRef.current ?? createHistory(current),
+        next,
+      );
       return next;
     });
     if (status) {
@@ -171,30 +218,34 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   }
 
   function undo() {
-    const previous = historyRef.current.past.pop();
-    if (!previous) {
+    const history = historyRef.current;
+    if (!history) {
       return;
     }
 
-    setMap((current) => {
-      historyRef.current.future.push(current);
-      return previous;
-    });
-    setMapNameDraft(previous.name);
+    const next = undoHistory(history);
+    if (next === history) {
+      return;
+    }
+    historyRef.current = next;
+    setMap(next.present);
+    setMapNameDraft(next.present.name);
     setMessage("Undid last change.");
   }
 
   function redo() {
-    const next = historyRef.current.future.pop();
-    if (!next) {
+    const history = historyRef.current;
+    if (!history) {
       return;
     }
 
-    setMap((current) => {
-      historyRef.current.past.push(current);
-      return next;
-    });
-    setMapNameDraft(next.name);
+    const next = redoHistory(history);
+    if (next === history) {
+      return;
+    }
+    historyRef.current = next;
+    setMap(next.present);
+    setMapNameDraft(next.present.name);
     setMessage("Redid last change.");
   }
 
@@ -207,8 +258,8 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   }
 
   function finishDrawing() {
-    if (drawingPoints.length < 3) {
-      setMessage("A polygon needs at least three points.");
+    if (!isValidPolygon(drawingPoints)) {
+      setMessage("Polygon needs three distinct points and a valid shape.");
       return;
     }
 
@@ -333,16 +384,82 @@ export function MapEditor({ initialMap }: MapEditorProps) {
       if (serializeMapDocument(start) === serializeMapDocument(current)) {
         return current;
       }
-      historyRef.current.past.push(start);
-      historyRef.current.future = [];
+      historyRef.current = pushHistory(
+        historyRef.current ?? createHistory(start),
+        current,
+      );
       return current;
     });
     setMessage("Object moved.");
   }
 
+  function handleVertexDragStart() {
+    vertexDragStartRef.current = map;
+  }
+
+  function handleVertexMove(
+    featureId: string,
+    vertexIndex: number,
+    point: Point,
+  ) {
+    setMap((current) => ({
+      ...current,
+      features: current.features.map((feature) => {
+        if (feature.id !== featureId || feature.kind !== "polygon") {
+          return feature;
+        }
+        const points = updatePolygonVertex(feature.points, vertexIndex, point);
+        return points ? { ...feature, points } : feature;
+      }),
+    }));
+  }
+
+  function handleVertexDragEnd() {
+    const start = vertexDragStartRef.current;
+    vertexDragStartRef.current = null;
+    if (!start) {
+      return;
+    }
+
+    setMap((current) => {
+      if (serializeMapDocument(start) === serializeMapDocument(current)) {
+        return current;
+      }
+      historyRef.current = pushHistory(
+        historyRef.current ?? createHistory(start),
+        current,
+      );
+      return current;
+    });
+    setMessage("Vertex moved.");
+  }
+
+  function cancelActiveDrag() {
+    const start = vertexDragStartRef.current ?? featureDragStartRef.current;
+    if (!start) {
+      return;
+    }
+    setMap(start);
+    vertexDragStartRef.current = null;
+    featureDragStartRef.current = null;
+    setMessage("Edit cancelled.");
+  }
+
   function saveMap() {
-    window.localStorage.setItem(STORAGE_KEY, serializeMapDocument(map));
-    setMessage("Map saved locally.");
+    const result = saveMapToStorage(window.localStorage, map);
+    if (result.status === "saved") {
+      setMessage("Map saved locally.");
+    } else {
+      setMessage("Save failed. Export JSON to preserve your map.");
+    }
+  }
+
+  function generateMap() {
+    const spec = VALID_PROMPT_TO_MAP_EXAMPLES[
+      (map.features.length + map.name.length) % VALID_PROMPT_TO_MAP_EXAMPLES.length
+    ];
+    const generated = generateGeography(spec, map.width, map.height);
+    commitMap(generated.map, `Generated ${generated.ringCount} landmasses.`);
   }
 
   function exportMap() {
@@ -365,7 +482,9 @@ export function MapEditor({ initialMap }: MapEditorProps) {
 
     try {
       const imported = parseMapDocument(await file.text());
-      commitMap(imported, "Map imported.");
+      setMap(imported);
+      historyRef.current = createHistory(imported);
+      setMessage("Map imported.");
       setMapNameDraft(imported.name);
       setSelectedFeatureId(null);
       setIsContextOpen(false);
@@ -388,8 +507,8 @@ export function MapEditor({ initialMap }: MapEditorProps) {
   }
 
   const selectedFeature = featureById(map, selectedFeatureId);
-  const canUndo = historyRef.current.past.length > 0;
-  const canRedo = historyRef.current.future.length > 0;
+  const canUndo = Boolean(historyRef.current?.past.length);
+  const canRedo = Boolean(historyRef.current?.future.length);
 
   return (
     <div className="relative h-full overflow-hidden bg-[#F7F5EF] text-[#353F39]">
@@ -441,6 +560,9 @@ export function MapEditor({ initialMap }: MapEditorProps) {
           >
             ⇧
           </ToolbarButton>
+          <ToolbarButton onClick={generateMap} label="Generate seeded map">
+            G
+          </ToolbarButton>
           <input
             ref={importInputRef}
             type="file"
@@ -470,11 +592,18 @@ export function MapEditor({ initialMap }: MapEditorProps) {
         onMoveFeature={handleFeatureMove}
         onFeatureDragStart={handleFeatureDragStart}
         onFeatureDragEnd={handleFeatureDragEnd}
+        onFeatureDragCancel={cancelActiveDrag}
+        onMoveVertex={handleVertexMove}
+        onVertexDragStart={handleVertexDragStart}
+        onVertexDragEnd={handleVertexDragEnd}
+        onVertexDragCancel={cancelActiveDrag}
+        onFinishDrawing={finishDrawing}
+        onCancelInteraction={cancelActiveDrag}
       />
 
       {tool === "draw" ? (
         <div className="absolute bottom-5 left-1/2 z-10 -translate-x-1/2 rounded-full bg-white px-4 py-2 text-xs font-medium shadow-lg">
-          {drawingPoints.length} points ·{" "}
+          Click to add points · Enter/double-click to finish · Esc to cancel ·{" "}
           <button type="button" className="font-bold text-[#657F61]" onClick={finishDrawing}>
             Finish polygon
           </button>

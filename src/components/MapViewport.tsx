@@ -38,6 +38,18 @@ export interface MapViewportProps {
   onMoveFeature?: (featureId: string, delta: Vec2) => void;
   onFeatureDragStart?: (featureId: string) => void;
   onFeatureDragEnd?: () => void;
+  onFeatureDragCancel?: () => void;
+  onMoveVertex?: (
+    featureId: string,
+    vertexIndex: number,
+    point: Vec2,
+  ) => void;
+  onVertexDragStart?: (featureId: string, vertexIndex: number) => void;
+  onVertexDragEnd?: () => void;
+  onVertexDragCancel?: () => void;
+  onDrawingPreview?: (point: Vec2 | null) => void;
+  onFinishDrawing?: () => void;
+  onCancelInteraction?: () => void;
 }
 
 export function MapViewport({
@@ -50,19 +62,36 @@ export function MapViewport({
   onMoveFeature,
   onFeatureDragStart,
   onFeatureDragEnd,
+  onFeatureDragCancel,
+  onMoveVertex,
+  onVertexDragStart,
+  onVertexDragEnd,
+  onVertexDragCancel,
+  onDrawingPreview,
+  onFinishDrawing,
+  onCancelInteraction,
 }: MapViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<Size>(INITIAL_SIZE);
   const hasMeasuredRef = useRef(false);
-  const dragRef = useRef<{ pointerId: number; last: Vec2 } | null>(null);
-  const featureDragRef = useRef<{
-    pointerId: number;
-    featureId: string;
-    last: Vec2;
-  } | null>(null);
+  const interactionRef = useRef<
+    | { kind: "pan"; pointerId: number; last: Vec2 }
+    | { kind: "feature"; pointerId: number; featureId: string; last: Vec2 }
+    | {
+        kind: "vertex";
+        pointerId: number;
+        featureId: string;
+        vertexIndex: number;
+      }
+    | null
+  >(null);
+  const featureClickRef = useRef(false);
   const [size, setSize] = useState<Size>(INITIAL_SIZE);
   const [viewport, setViewport] = useState<Viewport>(INITIAL_VIEWPORT);
   const [isPanning, setIsPanning] = useState(false);
+  const [drawingPreviewPoint, setDrawingPreviewPoint] = useState<Vec2 | null>(
+    null,
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -138,6 +167,25 @@ export function MapViewport({
     };
   }, []);
 
+  useEffect(() => {
+    function handleEscape(event: KeyboardEvent) {
+      const interaction = interactionRef.current;
+      if (event.key !== "Escape" || !interaction) {
+        return;
+      }
+
+      if (containerRef.current?.hasPointerCapture(interaction.pointerId)) {
+        containerRef.current.releasePointerCapture(interaction.pointerId);
+      }
+      interactionRef.current = null;
+      setIsPanning(false);
+      onCancelInteraction?.();
+    }
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [onCancelInteraction]);
+
   function zoomAtCenter(factor: number) {
     setViewport((current) => zoomViewportAtCenter(current, size, factor));
   }
@@ -157,12 +205,13 @@ export function MapViewport({
       return;
     }
 
-    if (event.button !== 0 || dragRef.current !== null) {
+    if (event.button !== 0 || interactionRef.current !== null) {
       return;
     }
 
     event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = {
+    interactionRef.current = {
+      kind: "pan",
       pointerId: event.pointerId,
       last: { x: event.clientX, y: event.clientY },
     };
@@ -170,54 +219,81 @@ export function MapViewport({
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
-    const featureDrag = featureDragRef.current;
+    if (mode === "draw" && interactionRef.current === null) {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const point = screenToWorld(
+        { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+        viewport,
+      );
+      setDrawingPreviewPoint(point);
+      onDrawingPreview?.(point);
+    }
 
-    if (featureDrag?.pointerId === event.pointerId) {
+    const interaction = interactionRef.current;
+
+    if (interaction?.kind === "feature" && interaction.pointerId === event.pointerId) {
       const delta: Vec2 = {
-        x: (event.clientX - featureDrag.last.x) / viewport.scale,
-        y: (event.clientY - featureDrag.last.y) / viewport.scale,
+        x: (event.clientX - interaction.last.x) / viewport.scale,
+        y: (event.clientY - interaction.last.y) / viewport.scale,
       };
-      featureDragRef.current = {
-        ...featureDrag,
+      interactionRef.current = {
+        ...interaction,
         last: { x: event.clientX, y: event.clientY },
       };
-      onMoveFeature?.(featureDrag.featureId, delta);
+      onMoveFeature?.(interaction.featureId, delta);
       return;
     }
 
-    const drag = dragRef.current;
+    if (interaction?.kind === "vertex" && interaction.pointerId === event.pointerId) {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      onMoveVertex?.(
+        interaction.featureId,
+        interaction.vertexIndex,
+        screenToWorld(
+          { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+          viewport,
+        ),
+      );
+      return;
+    }
 
-    if (!drag || drag.pointerId !== event.pointerId) {
+    if (interaction?.kind !== "pan" || interaction.pointerId !== event.pointerId) {
       return;
     }
 
     const delta: Vec2 = {
-      x: event.clientX - drag.last.x,
-      y: event.clientY - drag.last.y,
+      x: event.clientX - interaction.last.x,
+      y: event.clientY - interaction.last.y,
     };
 
-    dragRef.current = {
-      pointerId: drag.pointerId,
+    interactionRef.current = {
+      ...interaction,
       last: { x: event.clientX, y: event.clientY },
     };
     setViewport((current) => panViewport(current, delta));
   }
 
   function stopPanning(event: ReactPointerEvent<HTMLDivElement>) {
-    const featureDrag = featureDragRef.current;
+    const interaction = interactionRef.current;
 
-    if (featureDrag?.pointerId === event.pointerId) {
+    if (
+      interaction &&
+      interaction.kind !== "pan" &&
+      interaction.pointerId === event.pointerId
+    ) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
-      featureDragRef.current = null;
-      onFeatureDragEnd?.();
+
+      interactionRef.current = null;
+      if (interaction.kind === "feature") {
+        onFeatureDragEnd?.();
+      }
+      onVertexDragEnd?.();
       return;
     }
 
-    const drag = dragRef.current;
-
-    if (!drag || drag.pointerId !== event.pointerId) {
+    if (!interaction || interaction.kind !== "pan" || interaction.pointerId !== event.pointerId) {
       return;
     }
 
@@ -225,16 +301,38 @@ export function MapViewport({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    dragRef.current = null;
+    interactionRef.current = null;
     setIsPanning(false);
   }
 
-  function handleLostPointerCapture() {
-    if (featureDragRef.current) {
-      onFeatureDragEnd?.();
+  function cancelInteraction(event: ReactPointerEvent<HTMLDivElement>) {
+    const interaction = interactionRef.current;
+    if (!interaction || interaction.pointerId !== event.pointerId) {
+      return;
     }
-    dragRef.current = null;
-    featureDragRef.current = null;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    interactionRef.current = null;
+    setIsPanning(false);
+
+    if (interaction.kind === "feature") {
+      onFeatureDragCancel?.();
+    } else if (interaction.kind === "vertex") {
+      onVertexDragCancel?.();
+    }
+  }
+
+  function handleLostPointerCapture() {
+    const interaction = interactionRef.current;
+    if (interaction?.kind === "feature") {
+      onFeatureDragCancel?.();
+    } else if (interaction?.kind === "vertex") {
+      onVertexDragCancel?.();
+    }
+    interactionRef.current = null;
     setIsPanning(false);
   }
 
@@ -243,16 +341,39 @@ export function MapViewport({
       return;
     }
 
+    if (mode === "select" && featureClickRef.current) {
+      featureClickRef.current = false;
+      return;
+    }
+    if (mode === "select" && event.target !== event.currentTarget) {
+      return;
+    }
+
+    if (mode === "draw" && event.detail === 2) {
+      onFinishDrawing?.();
+      return;
+    }
+
     const bounds = event.currentTarget.getBoundingClientRect();
-    onCanvasClick(
-      screenToWorld(
-        {
-          x: event.clientX - bounds.left,
-          y: event.clientY - bounds.top,
-        },
-        viewport,
-      ),
+    const point = screenToWorld(
+      { x: event.clientX - bounds.left, y: event.clientY - bounds.top },
+      viewport,
     );
+    const firstPoint = drawingPoints[0];
+    if (
+      mode === "draw" &&
+      firstPoint &&
+      Math.hypot(
+        point.x * viewport.scale + viewport.x -
+          (firstPoint.x * viewport.scale + viewport.x),
+        point.y * viewport.scale + viewport.y -
+          (firstPoint.y * viewport.scale + viewport.y),
+      ) <= 12
+    ) {
+      onFinishDrawing?.();
+      return;
+    }
+    onCanvasClick(point);
   }
 
   function handleFeaturePointerDown(
@@ -260,19 +381,42 @@ export function MapViewport({
     featureId: string,
   ) {
     onSelectFeature?.(featureId);
+    featureClickRef.current = true;
 
     if (mode !== "select" || event.button !== 0) {
       return;
     }
 
     event.stopPropagation();
+    featureClickRef.current = true;
     containerRef.current?.setPointerCapture(event.pointerId);
-    featureDragRef.current = {
+    interactionRef.current = {
+      kind: "feature",
       pointerId: event.pointerId,
       featureId,
       last: { x: event.clientX, y: event.clientY },
     };
     onFeatureDragStart?.(featureId);
+  }
+
+  function handleVertexPointerDown(
+    event: ReactPointerEvent<SVGCircleElement>,
+    featureId: string,
+    vertexIndex: number,
+  ) {
+    event.stopPropagation();
+    featureClickRef.current = true;
+    if (mode !== "select" || event.button !== 0) {
+      return;
+    }
+    containerRef.current?.setPointerCapture(event.pointerId);
+    interactionRef.current = {
+      kind: "vertex",
+      pointerId: event.pointerId,
+      featureId,
+      vertexIndex,
+    };
+    onVertexDragStart?.(featureId, vertexIndex);
   }
 
   return (
@@ -285,7 +429,7 @@ export function MapViewport({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={stopPanning}
-        onPointerCancel={stopPanning}
+        onPointerCancel={cancelInteraction}
         onLostPointerCapture={handleLostPointerCapture}
         onClick={handleCanvasClick}
       >
@@ -343,14 +487,20 @@ export function MapViewport({
                 key={feature.id}
                 feature={feature}
                 selected={selectedFeatureId === feature.id}
-                onSelect={(featureId) => onSelectFeature?.(featureId)}
+                onSelect={(featureId) => {
+                  if (mode === "select") {
+                    onSelectFeature?.(featureId);
+                  }
+                }}
                 onPointerDown={handleFeaturePointerDown}
+                onVertexPointerDown={handleVertexPointerDown}
+                viewportScale={viewport.scale}
               />
             ))}
             {drawingPoints.length > 0 ? (
               <>
                 <polyline
-                  points={drawingPoints
+                  points={[...drawingPoints, ...(drawingPreviewPoint ? [drawingPreviewPoint] : [])]
                     .map((point) => `${point.x},${point.y}`)
                     .join(" ")}
                   fill="none"

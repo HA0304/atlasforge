@@ -6,6 +6,7 @@ import {
   type Point,
   type PolygonFeature,
 } from "./types";
+import { isValidPolygon } from "../geometry/polygons";
 
 export class MapDocumentError extends Error {
   readonly path: string;
@@ -60,7 +61,28 @@ function validatePoint(value: unknown, path: string): Point {
   };
 }
 
-function validatePolygon(value: unknown, path: string): PolygonFeature {
+function validatePointInBounds(
+  value: unknown,
+  path: string,
+  width: number,
+  height: number,
+): Point {
+  const point = validatePoint(value, path);
+  if (point.x < 0 || point.x > width || point.y < 0 || point.y > height) {
+    throw new MapDocumentError(
+      "point must be within map bounds",
+      path,
+    );
+  }
+  return point;
+}
+
+function validatePolygon(
+  value: unknown,
+  path: string,
+  width: number,
+  height: number,
+): PolygonFeature {
   const polygon = requireRecord(value, path);
   const points = polygon.points;
 
@@ -71,40 +93,64 @@ function validatePolygon(value: unknown, path: string): PolygonFeature {
     );
   }
 
+  const parsedPoints = points.map((point, index) =>
+    validatePointInBounds(point, `${path}.points[${index}]`, width, height),
+  );
+
+  if (!isValidPolygon(parsedPoints)) {
+    throw new MapDocumentError(
+      "expected a non-degenerate polygon without self-intersections",
+      `${path}.points`,
+    );
+  }
+
   return {
     kind: "polygon",
     id: requireString(polygon, "id", path),
     name: requireString(polygon, "name", path),
-    points: points.map((point, index) =>
-      validatePoint(point, `${path}.points[${index}]`),
-    ),
+    points: parsedPoints,
     fill: requireString(polygon, "fill", path),
     stroke: requireString(polygon, "stroke", path),
   };
 }
 
-function validateLabel(value: unknown, path: string): LabelFeature {
+function validateLabel(
+  value: unknown,
+  path: string,
+  width: number,
+  height: number,
+): LabelFeature {
   const label = requireRecord(value, path);
 
   return {
     kind: "label",
     id: requireString(label, "id", path),
     text: requireString(label, "text", path),
-    position: validatePoint(label.position, `${path}.position`),
+    position: validatePointInBounds(
+      label.position,
+      `${path}.position`,
+      width,
+      height,
+    ),
     fontSize: requireFiniteNumber(label, "fontSize", path),
     color: requireString(label, "color", path),
   };
 }
 
-function validateFeature(value: unknown, index: number): MapFeature {
+function validateFeature(
+  value: unknown,
+  index: number,
+  width: number,
+  height: number,
+): MapFeature {
   const path = `features[${index}]`;
   const feature = requireRecord(value, path);
 
   if (feature.kind === "polygon") {
-    return validatePolygon(feature, path);
+    return validatePolygon(feature, path, width, height);
   }
   if (feature.kind === "label") {
-    return validateLabel(feature, path);
+    return validateLabel(feature, path, width, height);
   }
   throw new MapDocumentError("unknown feature kind", `${path}.kind`);
 }
@@ -134,7 +180,9 @@ export function validateMapDocument(value: unknown): MapDocument {
     throw new MapDocumentError("expected an array", "document.features");
   }
 
-  const features = rawFeatures.map(validateFeature);
+  const features = rawFeatures.map((feature, index) =>
+    validateFeature(feature, index, width, height),
+  );
   const ids = new Set<string>();
 
   for (const feature of features) {
